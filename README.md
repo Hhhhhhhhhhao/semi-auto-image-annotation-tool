@@ -29,6 +29,11 @@ sh yolov5/weights/download_weights
 python main.py
 ```
 
+The default model is 'yolov5s.pt'. Other models such as 'yolov5m.pt', 'yolov5l.pt', 'yolov5x.pt' are also available by:
+```
+python main.py --weights yolov5/weights/$MODEL_CHECKPOINT
+``` 
+
 
 ### Example
 
