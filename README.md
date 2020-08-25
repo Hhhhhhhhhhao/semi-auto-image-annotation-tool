@@ -18,7 +18,7 @@ sh yolov5/weights/download_weights
 
 ### Instructions
 
-1) Select (Remove) the COCO object classes for which you do not need suggestions from the class panel (right-down panel).
+1) Select (Remove) the COCO object classes for which you do not need suggestions from the class panel (right-down panel). Note that classes not shown in this panel will ne be predicted. Default classes are COCO 80 classes. Feel free to add more classes or remove classes not needed.
 
 2) When annotating manually, select the object class from the List and while keep it selected, select the BBox.
 
