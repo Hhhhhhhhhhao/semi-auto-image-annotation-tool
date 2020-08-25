@@ -2,33 +2,23 @@
 
 ![alt text](https://raw.githubusercontent.com/virajmavani/semi-auto-image-annotation-tool/master/demo.gif)
 
-Semi Automatic Image Annotation Toolbox with RetinaNet as the suggesting algorithm. The toolbox suggests 80 class objects from the MS COCO dataset using a pretrained RetinaNet model.
+Semi Automatic Image Annotation Toolbox with RetinaNet as the suggesting algorithm. The toolbox suggests 80 class objects from the MS COCO dataset using a pretrained YoLov5 model (https://github.com/ultralytics/yolov5).
+This repo is modified from https://github.com/opencvfun/semi-auto-image-annotation-tool
 
 ## Installation
 
 1) Clone this repository.
 
-2) In the repository, execute `pip install -r requirements.txt`.
-   Note that due to inconsistencies with how `tensorflow` should be installed,
-   this package does not define a dependency on `tensorflow` as it will try to install that (which at least on Arch Linux results in an incorrect installation).
-   Please make sure `tensorflow` is installed as per your systems requirements.
-   Also, make sure Keras 2.1.3 or higher and OpenCV 3.x is installed.
+2) In the repository, execute `pip install -r requirements.txt`
 
-3) Download the [pretrained weights](https://github.com/fizyr/keras-retinanet/releases/download/0.3.1/resnet50_coco_best_v2.1.0.h5) and save it in /snapshots.
-
-### Dependencies
-
-1) Tensorflow >= 1.7.0
-
-2) OpenCV = 3.x
-
-3) Keras >= 2.1.3
-
-For, Python >= 3.5
+3) Download the yolov5 pretrained weights: 
+```bash
+sh yolov5/weights/download_weights
+```
 
 ### Instructions
 
-1) Select the COCO object classes for which you need suggestions from the drop-down menu and add them.
+1) Select (Remove) the COCO object classes for which you do not need suggestions from the class panel (right-down panel).
 
 2) When annotating manually, select the object class from the List and while keep it selected, select the BBox.
 
@@ -39,6 +29,20 @@ For, Python >= 3.5
 python main.py
 ```
 
+
+### Example
+
+Open the software by:
+```
+python main.py
+```
+
+Select image dir or image as 'yolov5/inference/images/bus.jpg' or 'yolov5/inference/images'
+
+Start annotating and check the annotations in 'annotations' folder!
+ 
+ 
+### Others
 Tested on:
 
 1. Windows 10
