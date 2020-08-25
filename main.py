@@ -12,39 +12,55 @@ from tkinter import *
 from tkinter import filedialog
 from PIL import Image, ImageTk
 
-import keras
+# import keras
+# from keras_retinanet import models
+# from keras_retinanet.utils.image import preprocess_image
 
-from keras_retinanet import models
-from keras_retinanet.utils.image import preprocess_image
+# import yolov5 modules
+from yolov5.models.experimental import attempt_load
+from yolov5.utils.datasets import letterbox
+from yolov5.utils.general import (
+    check_img_size, non_max_suppression, apply_classifier, scale_coords,
+    xyxy2xywh, plot_one_box, strip_optimizer, set_logging)
+from yolov5.utils.torch_utils import select_device, load_classifier, time_synchronized
 
 # import miscellaneous modules
 import os
+import csv
 import numpy as np
-import tensorflow as tf
 import config
 import math
-
-
-def get_session():
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    return tf.Session(config=config)
-
-
-keras.backend.tensorflow_backend.set_session(get_session())
-
-model_path = os.path.join('.', 'snapshots', 'resnet50_coco_best_v2.1.0.h5')
-
-model = models.load_model(model_path, backbone_name='resnet50')
+import torch
 
 
 class MainGUI:
-    def __init__(self, master):
+    def __init__(self, master, opt):
         self.parent = master
         self.parent.title("Semi Automatic Image Annotation Tool")
         self.frame = Frame(self.parent)
         self.frame.pack(fill=BOTH, expand=1)
         self.parent.resizable(width=False, height=False)
+
+        # setup yolov5 model
+        self.opt = opt
+        opt.augment = True
+        opt.update = False
+        opt.agnostic_nms = False
+        # initialize
+        set_logging()
+        device = select_device(opt.device)
+        self.device = device
+
+        # load model
+        model = attempt_load(opt.weights, map_location=device)  # load FP32 model
+        self.img_size = check_img_size(opt.img_size, s=model.stride.max())  # check img_size
+        half = device.type != 'cpu'  # half precision only supported on CUDA
+        self.half = half
+        if half:
+            model.half()  # to FP16
+        self.model = model
+        # get names
+        self.names = model.module.names if hasattr(model, 'module') else model.names
 
         # Initialize class variables
         self.img = None
@@ -87,7 +103,6 @@ class MainGUI:
         self.annotation_file = open('annotations/' + self.anno_filename, 'w+')
         self.annotation_file.write("")
         self.annotation_file.close()
-
         # ------------------ GUI ---------------------
 
         # Control Panel
@@ -119,7 +134,7 @@ class MainGUI:
         self.zoomcanvas.pack(fill=X, side=TOP, anchor='center')
 
         # Image Editing Region
-        self.canvas = Canvas(self.frame, width=500, height=500)
+        self.canvas = Canvas(self.frame, width=self.img_size, height=self.img_size)
         self.canvas.grid(row=0, column=1, sticky=W + N)
         self.canvas.bind("<Button-1>", self.mouse_click)
         self.canvas.bind("<Motion>", self.mouse_move, "+")
@@ -148,6 +163,8 @@ class MainGUI:
 
         self.labelListBox = Listbox(self.listPanel)
         self.labelListBox.pack(fill=X, side=TOP)
+        for name in self.names:
+            self.labelListBox.insert(END, str(name))
 
         self.cocoLabels = config.labels_to_names.values()
         self.cocoIntVars = []
@@ -168,6 +185,11 @@ class MainGUI:
     def open_image(self):
         self.filename = filedialog.askopenfilename(title="Select Image", filetypes=(("jpeg files", "*.jpg"),
                                                                                     ("all files", "*.*")))
+        # update annotation file
+        self.anno_filename = '{}_anno.csv'.format(self.filename.split('/')[-1].split('.')[0])
+        self.annotation_file = open('annotations/' + self.anno_filename, 'w+')
+        self.annotation_file.write("")
+        self.annotation_file.close()
         if not self.filename:
             return None
         self.filenameBuffer = self.filename
@@ -177,6 +199,14 @@ class MainGUI:
         self.imageDir = filedialog.askdirectory(title="Select Dataset Directory")
         if not self.imageDir:
             return None
+        # filename
+        filename = self.imageDir.split('/')
+        filename = filename[-2] + '_' + filename[-1]
+        # update annotation file
+        self.anno_filename = '{}_anno.csv'.format(filename)
+        self.annotation_file = open('annotations/' + self.anno_filename, 'w+')
+        self.annotation_file.write("")
+        self.annotation_file.close()
         self.imageList = os.listdir(self.imageDir)
         self.imageList = sorted(self.imageList)
         self.imageTotal = len(self.imageList)
@@ -191,12 +221,12 @@ class MainGUI:
         # Resize to Pascal VOC format
         w, h = self.img.size
         if w >= h:
-            baseW = 500
+            baseW = self.img_size
             wpercent = (baseW / float(w))
             hsize = int((float(h) * float(wpercent)))
             self.img = self.img.resize((baseW, hsize), Image.BICUBIC)
         else:
-            baseH = 500
+            baseH = self.img_size
             wpercent = (baseH / float(h))
             wsize = int((float(w) * float(wpercent)))
             self.img = self.img.resize((wsize, baseH), Image.BICUBIC)
@@ -224,16 +254,22 @@ class MainGUI:
     def save(self):
         if self.filenameBuffer is None:
             self.annotation_file = open('annotations/' + self.anno_filename, 'a')
+            # writer = csv.writer(self.annotation_file)
+            # key = self.imageDirPathBuffer + '/' + self.imageList[self.cur] + ','
+            # value = dict()
+            save_string = self.imageDirPathBuffer + '/' + self.imageList[self.cur] + ','
             for idx, item in enumerate(self.bboxList):
-                self.annotation_file.write(self.imageDirPathBuffer + '/' + self.imageList[self.cur] + ',' +
-                                           ','.join(map(str, self.bboxList[idx])) + ',' + str(self.objectLabelList[idx])
-                                           + '\n')
+                save_string += ','.join(map(str, self.bboxList[idx])) + ',' + str(self.objectLabelList[idx] + ',')
+                # value[str(self.objectLabelList[idx])] = self.bboxList[idx]
+            self.annotation_file.write(save_string + '\n')
+            # writer.writerow([key, value])
             self.annotation_file.close()
         else:
             self.annotation_file = open('annotations/' + self.anno_filename, 'a')
+            save_string = self.imageDirPathBuffer + '/' + self.imageList[self.cur] + ','
             for idx, item in enumerate(self.bboxList):
-                self.annotation_file.write(self.filenameBuffer + ',' + ','.join(map(str, self.bboxList[idx])) + ','
-                                           + str(self.objectLabelList[idx]) + '\n')
+                save_string += ','.join(map(str, self.bboxList[idx])) + ',' + str(self.objectLabelList[idx] + ',')
+            self.annotation_file.write(save_string + '\n')
             self.annotation_file.close()
 
     def mouse_click(self, event):
@@ -421,22 +457,49 @@ class MainGUI:
     def automate(self):
         self.processingLabel.config(text="Processing     ")
         self.processingLabel.update_idletasks()
-        open_cv_image = np.array(self.img)
-        # Convert RGB to BGR
-        opencvImage= open_cv_image[:, :, ::-1].copy()
-        # opencvImage = cv2.cvtColor(np.array(self.img), cv2.COLOR_RGB2BGR)
-        image = preprocess_image(opencvImage)
-        boxes, scores, labels = model.predict_on_batch(np.expand_dims(image, axis=0))
-        for idx, (box, label, score) in enumerate(zip(boxes[0], labels[0], scores[0])):
+        open_cv_image0 = np.array(self.img)
+
+        # Padded resize
+        open_cv_image = letterbox(open_cv_image0, new_shape=self.img_size)[0]
+
+        # Convert
+        open_cv_image = open_cv_image[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+        open_cv_image = np.ascontiguousarray(open_cv_image)
+
+        img = torch.from_numpy(open_cv_image).to(self.device)
+        img = img.half() if self.half else img.float()  # uint8 to fp16/32
+        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        if img.ndimension() == 3:
+            img = img.unsqueeze(0)
+
+        # inference
+        pred = self.model(img, augment=opt.augment)[0]
+
+        # Apply NMS
+        pred = non_max_suppression(pred, self.opt.conf_thres, self.opt.iou_thres, classes=self.opt.classes, agnostic=self.opt.agnostic_nms)
+
+        # process detections
+        det = pred[0]
+        # gn = torch.tensor(open_cv_image0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+        if det is not None and len(det):
+            # Rescale boxes from img_size to im0 size
+            det[:, :4] = scale_coords(img.shape[2:], det[:, :4], open_cv_image0.shape).round()
+
+        for idx, (*xyxy, conf, cls) in enumerate(reversed(det)):
+
+            if conf < 0.5:
+                continue
+
+            xyxy = torch.tensor(xyxy).view(-1).cpu().numpy().astype(np.int)
+            label = self.names[int(cls)]
+
             curr_label_list = self.labelListBox.get(0, END)
             curr_label_list = list(curr_label_list)
-            if score < 0.5:
+
+            if label not in curr_label_list:
                 continue
 
-            if config.labels_to_names[label] not in curr_label_list:
-                continue
-
-            b = box.astype(int)
+            b = xyxy.tolist()
 
             self.bboxId = self.canvas.create_rectangle(b[0], b[1],
                                                        b[2], b[3],
@@ -453,17 +516,28 @@ class MainGUI:
             self.bboxPointList.append(o4)
             self.bboxIdList.append(self.bboxId)
             self.bboxId = None
-            self.objectLabelList.append(str(config.labels_to_names[label]))
+            self.objectLabelList.append(str(label))
             self.objectListBox.insert(END, '(%d, %d) -> (%d, %d)' % (b[0], b[1], b[2], b[3]) + ': ' +
-                                      str(config.labels_to_names[label]))
+                                      str(label))
             self.objectListBox.itemconfig(len(self.bboxIdList) - 1,
                                           fg=config.COLORS[(len(self.bboxIdList) - 1) % len(config.COLORS)])
         self.processingLabel.config(text="Done              ")
 
 
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--weights', nargs='+', type=str, default='yolov5/weights/yolov5s.pt', help='model.pt path(s)')
+    parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
+    parser.add_argument('--conf-thres', type=float, default=0.5, help='object confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
+    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
+    opt = parser.parse_args()
+    print(opt)
+
     root = Tk()
     imgicon = PhotoImage(file='icon.gif')
     root.tk.call('wm', 'iconphoto', root._w, imgicon)
-    tool = MainGUI(root)
+    tool = MainGUI(root, opt)
     root.mainloop()
