@@ -24,6 +24,9 @@ from yolov5.utils.general import (
     xyxy2xywh, plot_one_box, strip_optimizer, set_logging)
 from yolov5.utils.torch_utils import select_device, load_classifier, time_synchronized
 
+# import facenet modules
+from facenet import MTCNN
+
 # import miscellaneous modules
 import os
 import csv
@@ -51,16 +54,20 @@ class MainGUI:
         device = select_device(opt.device)
         self.device = device
 
-        # load model
+        # load yolo5 object detection model
         model = attempt_load(opt.weights, map_location=device)  # load FP32 model
         self.img_size = check_img_size(opt.img_size, s=model.stride.max())  # check img_size
         half = device.type != 'cpu'  # half precision only supported on CUDA
         self.half = half
         if half:
             model.half()  # to FP16
-        self.model = model
-        # get names
-        self.names = model.module.names if hasattr(model, 'module') else model.names
+        self.object_model = model
+        # get object detection names
+        self.names = ['person']
+
+        # load face detect model
+        self.face_model = MTCNN(keep_all=True, margin=opt.face_margin, device=device)
+        self.face_landmarks = opt.face_landmarks
 
         # Initialize class variables
         self.img = None
@@ -163,7 +170,7 @@ class MainGUI:
 
         self.labelListBox = Listbox(self.listPanel)
         self.labelListBox.pack(fill=X, side=TOP)
-        for name in self.names:
+        for name in self.names + ['face']:
             self.labelListBox.insert(END, str(name))
 
         self.cocoLabels = config.labels_to_names.values()
@@ -234,6 +241,7 @@ class MainGUI:
         self.tkimg = ImageTk.PhotoImage(self.img)
         self.canvas.create_image(0, 0, image=self.tkimg, anchor=NW)
         self.clear_bbox()
+        self.automate()
 
     def open_next(self, event=None):
         self.save()
@@ -455,6 +463,7 @@ class MainGUI:
                     self.labelListBox.insert(END, str(list_label_coco))
 
     def automate(self):
+        self.clear_bbox()
         self.processingLabel.config(text="Processing     ")
         self.processingLabel.update_idletasks()
         open_cv_image0 = np.array(self.img)
@@ -472,8 +481,8 @@ class MainGUI:
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
 
-        # inference
-        pred = self.model(img, augment=opt.augment)[0]
+        # inference object detection
+        pred = self.object_model(img, augment=opt.augment)[0]
 
         # Apply NMS
         pred = non_max_suppression(pred, self.opt.conf_thres, self.opt.iou_thres, classes=self.opt.classes, agnostic=self.opt.agnostic_nms)
@@ -491,7 +500,7 @@ class MainGUI:
                 continue
 
             xyxy = torch.tensor(xyxy).view(-1).cpu().numpy().astype(np.int)
-            label = self.names[int(cls)]
+            label = config.labels_to_names[int(cls)]
 
             curr_label_list = self.labelListBox.get(0, END)
             curr_label_list = list(curr_label_list)
@@ -521,7 +530,50 @@ class MainGUI:
                                       str(label))
             self.objectListBox.itemconfig(len(self.bboxIdList) - 1,
                                           fg=config.COLORS[(len(self.bboxIdList) - 1) % len(config.COLORS)])
-        self.processingLabel.config(text="Done              ")
+
+        # inference faces
+        frame = Image.fromarray(open_cv_image0[:, :, ::-1])
+
+        # detect faces
+        boxes, probs = self.face_model.detect(frame, landmarks=False)
+
+        for box, conf in zip(boxes, probs):
+
+            if conf < 0.5:
+                continue
+
+            # box in xyxy format
+            b = box.astype(np.int).tolist()
+            label = 'face'
+
+            curr_label_list = self.labelListBox.get(0, END)
+            curr_label_list = list(curr_label_list)
+
+            if label not in curr_label_list:
+                continue
+
+            self.bboxId = self.canvas.create_rectangle(b[0], b[1],
+                                                       b[2], b[3],
+                                                       width=2,
+                                                       outline=config.COLORS[len(self.bboxList) % len(config.COLORS)])
+            self.bboxList.append((b[0], b[1], b[2], b[3]))
+            o1 = self.canvas.create_oval(b[0] - 3, b[1] - 3, b[0] + 3, b[1] + 3, fill="red")
+            o2 = self.canvas.create_oval(b[2] - 3, b[1] - 3, b[2] + 3, b[1] + 3, fill="red")
+            o3 = self.canvas.create_oval(b[2] - 3, b[3] - 3, b[2] + 3, b[3] + 3, fill="red")
+            o4 = self.canvas.create_oval(b[0] - 3, b[3] - 3, b[0] + 3, b[3] + 3, fill="red")
+            self.bboxPointList.append(o1)
+            self.bboxPointList.append(o2)
+            self.bboxPointList.append(o3)
+            self.bboxPointList.append(o4)
+            self.bboxIdList.append(self.bboxId)
+            self.bboxId = None
+            self.objectLabelList.append(str(label))
+            self.objectListBox.insert(END, '(%d, %d) -> (%d, %d)' % (b[0], b[1], b[2], b[3]) + ': ' +
+                                      str(label))
+            self.objectListBox.itemconfig(len(self.bboxIdList) - 1,
+                                          fg=config.COLORS[(len(self.bboxIdList) - 1) % len(config.COLORS)])
+
+        self.processingLabel.config(text="Done")
 
 
 if __name__ == '__main__':
@@ -533,6 +585,8 @@ if __name__ == '__main__':
     parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
+    parser.add_argument('--face-margin', default=20, type=int, help='face detection margin')
+    parser.add_argument('--face-landmarks', default=False, action='store_true', help='flag of detecting face landmarks')
     opt = parser.parse_args()
     print(opt)
 
