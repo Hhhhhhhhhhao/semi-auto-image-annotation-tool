@@ -100,6 +100,8 @@ class MainGUI:
         self.filenameBuffer = None
         self.objectLabelList = []
         self.EDIT = False
+        # record image names for saving previous results
+        self.annoList = {}
 
         # initialize mouse state
         self.STATE = {'x': 0, 'y': 0}
@@ -241,7 +243,12 @@ class MainGUI:
         self.tkimg = ImageTk.PhotoImage(self.img)
         self.canvas.create_image(0, 0, image=self.tkimg, anchor=NW)
         self.clear_bbox()
-        self.automate()
+
+        anno_name = file.split('/')[-1]
+        if anno_name in self.annoList:
+            self.load_anno(anno_name)
+        else:
+            self.automate()
 
     def open_next(self, event=None):
         self.save()
@@ -261,7 +268,6 @@ class MainGUI:
 
     def save(self):
         if self.filenameBuffer is None:
-            self.annotation_file = open('annotations/' + self.anno_filename, 'a')
             # writer = csv.writer(self.annotation_file)
             # key = self.imageDirPathBuffer + '/' + self.imageList[self.cur] + ','
             # value = dict()
@@ -269,16 +275,32 @@ class MainGUI:
             for idx, item in enumerate(self.bboxList):
                 save_string += ','.join(map(str, self.bboxList[idx])) + ',' + str(self.objectLabelList[idx] + ',')
                 # value[str(self.objectLabelList[idx])] = self.bboxList[idx]
-            self.annotation_file.write(save_string + '\n')
-            # writer.writerow([key, value])
-            self.annotation_file.close()
         else:
-            self.annotation_file = open('annotations/' + self.anno_filename, 'a')
             save_string = self.imageDirPathBuffer + '/' + self.imageList[self.cur] + ','
             for idx, item in enumerate(self.bboxList):
                 save_string += ','.join(map(str, self.bboxList[idx])) + ',' + str(self.objectLabelList[idx] + ',')
+
+        if self.imageList[self.cur] in self.annoList:
+            if save_string != self.annoList[self.imageList[self.cur]]:
+                self.annoList[self.imageList[self.cur]] = save_string
+                filename = save_string.split(',')[0]
+
+                # replace
+                with open('annotations/' + self.anno_filename, 'r') as f:
+                    all_data = f.readlines()
+
+                with open('annotations/' + self.anno_filename, 'w') as f:
+                    for i, line in enumerate(all_data):
+                        if filename in line:
+                            f.writelines(save_string + '\n')
+                        else:
+                            f.writelines(line)
+        else:
+            self.annotation_file = open('annotations/' + self.anno_filename, 'a')
             self.annotation_file.write(save_string + '\n')
             self.annotation_file.close()
+            self.annoList[self.imageList[self.cur]] = save_string
+
 
     def mouse_click(self, event):
         # Check if Updating BBox
@@ -537,6 +559,10 @@ class MainGUI:
         # detect faces
         boxes, probs = self.face_model.detect(frame, landmarks=False)
 
+        if boxes is None:
+            boxes = []
+            probs = []
+
         for box, conf in zip(boxes, probs):
 
             if conf < 0.5:
@@ -574,6 +600,38 @@ class MainGUI:
                                           fg=config.COLORS[(len(self.bboxIdList) - 1) % len(config.COLORS)])
 
         self.processingLabel.config(text="Done")
+
+    def load_anno(self, file):
+        annotations = self.annoList[file].strip().split(',')
+        for i in range(1, len(annotations), 5):
+            if annotations[i] == '' or annotations[i] == '\n':
+                continue
+
+            x1, y1, x2, y2 = annotations[i:i+4]
+            label = annotations[i+4]
+            b = [int(x1), int(y1), int(x2), int(y2)]
+
+            self.bboxId = self.canvas.create_rectangle(b[0], b[1],
+                                                       b[2], b[3],
+                                                       width=2,
+                                                       outline=config.COLORS[len(self.bboxList) % len(config.COLORS)])
+            self.bboxList.append((b[0], b[1], b[2], b[3]))
+            o1 = self.canvas.create_oval(b[0] - 3, b[1] - 3, b[0] + 3, b[1] + 3, fill="red")
+            o2 = self.canvas.create_oval(b[2] - 3, b[1] - 3, b[2] + 3, b[1] + 3, fill="red")
+            o3 = self.canvas.create_oval(b[2] - 3, b[3] - 3, b[2] + 3, b[3] + 3, fill="red")
+            o4 = self.canvas.create_oval(b[0] - 3, b[3] - 3, b[0] + 3, b[3] + 3, fill="red")
+            self.bboxPointList.append(o1)
+            self.bboxPointList.append(o2)
+            self.bboxPointList.append(o3)
+            self.bboxPointList.append(o4)
+            self.bboxIdList.append(self.bboxId)
+            self.bboxId = None
+            self.objectLabelList.append(str(label))
+            self.objectListBox.insert(END, '(%d, %d) -> (%d, %d)' % (b[0], b[1], b[2], b[3]) + ': ' +
+                                      str(label))
+            self.objectListBox.itemconfig(len(self.bboxIdList) - 1,
+                                          fg=config.COLORS[(len(self.bboxIdList) - 1) % len(config.COLORS)])
+
 
 
 if __name__ == '__main__':
