@@ -11,6 +11,7 @@ Copyright {2018} {Viraj Mavani}
 from tkinter import *
 from tkinter import filedialog
 from PIL import Image, ImageTk
+from glob import glob
 
 # import keras
 # from keras_retinanet import models
@@ -213,9 +214,24 @@ class MainGUI:
         filename = filename[-2] + '_' + filename[-1]
         # update annotation file
         self.anno_filename = '{}_anno.csv'.format(filename)
-        self.annotation_file = open('annotations/' + self.anno_filename, 'w+')
-        self.annotation_file.write("")
-        self.annotation_file.close()
+        # check if there is already an annotation file
+        exist = False
+        all_files = glob('annotations/*.csv')
+        for file in all_files:
+            if self.anno_filename in file:
+                exist = True
+                break
+        if exist:
+            self.annotation_file = open('annotations/' + self.anno_filename, 'r')
+            # add to self.annoList
+            for line in self.annotation_file:
+                line = line.strip()
+                filename = line.split(',')[0].split('/')[-1]
+                self.annoList[filename] = line + '\n'
+        else:
+            self.annotation_file = open('annotations/' + self.anno_filename, 'w+')
+            self.annotation_file.write("")
+            self.annotation_file.close()
         self.imageList = os.listdir(self.imageDir)
         self.imageList = sorted(self.imageList)
         self.imageTotal = len(self.imageList)
