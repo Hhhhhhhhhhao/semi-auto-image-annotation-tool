@@ -532,42 +532,42 @@ class MainGUI:
             # Rescale boxes from img_size to im0 size
             det[:, :4] = scale_coords(img.shape[2:], det[:, :4], open_cv_image0.shape).round()
 
-        for idx, (*xyxy, conf, cls) in enumerate(reversed(det)):
+            for idx, (*xyxy, conf, cls) in enumerate(reversed(det)):
 
-            if conf < 0.5:
-                continue
+                if conf < 0.5:
+                    continue
 
-            xyxy = torch.tensor(xyxy).view(-1).cpu().numpy().astype(np.int)
-            label = config.labels_to_names[int(cls)]
+                xyxy = torch.tensor(xyxy).view(-1).cpu().numpy().astype(np.int)
+                label = config.labels_to_names[int(cls)]
 
-            curr_label_list = self.labelListBox.get(0, END)
-            curr_label_list = list(curr_label_list)
+                curr_label_list = self.labelListBox.get(0, END)
+                curr_label_list = list(curr_label_list)
 
-            if label not in curr_label_list:
-                continue
+                if label not in curr_label_list:
+                    continue
 
-            b = xyxy.tolist()
+                b = xyxy.tolist()
 
-            self.bboxId = self.canvas.create_rectangle(b[0], b[1],
-                                                       b[2], b[3],
-                                                       width=2,
-                                                       outline=config.COLORS[len(self.bboxList) % len(config.COLORS)])
-            self.bboxList.append((b[0], b[1], b[2], b[3]))
-            o1 = self.canvas.create_oval(b[0] - 3, b[1] - 3, b[0] + 3, b[1] + 3, fill="red")
-            o2 = self.canvas.create_oval(b[2] - 3, b[1] - 3, b[2] + 3, b[1] + 3, fill="red")
-            o3 = self.canvas.create_oval(b[2] - 3, b[3] - 3, b[2] + 3, b[3] + 3, fill="red")
-            o4 = self.canvas.create_oval(b[0] - 3, b[3] - 3, b[0] + 3, b[3] + 3, fill="red")
-            self.bboxPointList.append(o1)
-            self.bboxPointList.append(o2)
-            self.bboxPointList.append(o3)
-            self.bboxPointList.append(o4)
-            self.bboxIdList.append(self.bboxId)
-            self.bboxId = None
-            self.objectLabelList.append(str(label))
-            self.objectListBox.insert(END, '(%d, %d) -> (%d, %d)' % (b[0], b[1], b[2], b[3]) + ': ' +
-                                      str(label))
-            self.objectListBox.itemconfig(len(self.bboxIdList) - 1,
-                                          fg=config.COLORS[(len(self.bboxIdList) - 1) % len(config.COLORS)])
+                self.bboxId = self.canvas.create_rectangle(b[0], b[1],
+                                                           b[2], b[3],
+                                                           width=2,
+                                                           outline=config.COLORS[len(self.bboxList) % len(config.COLORS)])
+                self.bboxList.append((b[0], b[1], b[2], b[3]))
+                o1 = self.canvas.create_oval(b[0] - 3, b[1] - 3, b[0] + 3, b[1] + 3, fill="red")
+                o2 = self.canvas.create_oval(b[2] - 3, b[1] - 3, b[2] + 3, b[1] + 3, fill="red")
+                o3 = self.canvas.create_oval(b[2] - 3, b[3] - 3, b[2] + 3, b[3] + 3, fill="red")
+                o4 = self.canvas.create_oval(b[0] - 3, b[3] - 3, b[0] + 3, b[3] + 3, fill="red")
+                self.bboxPointList.append(o1)
+                self.bboxPointList.append(o2)
+                self.bboxPointList.append(o3)
+                self.bboxPointList.append(o4)
+                self.bboxIdList.append(self.bboxId)
+                self.bboxId = None
+                self.objectLabelList.append(str(label))
+                self.objectListBox.insert(END, '(%d, %d) -> (%d, %d)' % (b[0], b[1], b[2], b[3]) + ': ' +
+                                          str(label))
+                self.objectListBox.itemconfig(len(self.bboxIdList) - 1,
+                                              fg=config.COLORS[(len(self.bboxIdList) - 1) % len(config.COLORS)])
 
         # inference faces
         frame = Image.fromarray(open_cv_image0[:, :, ::-1])
